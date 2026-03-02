@@ -12,6 +12,7 @@ export interface WhisperStreamState {
   disconnect: () => void;
   resetTranscript: () => void;
   injectTranscript: (text: string) => void;
+  transcribeBatch: (uri: string) => Promise<string>;
 }
 
 export function useWhisperStream(): WhisperStreamState {
@@ -95,5 +96,37 @@ export function useWhisperStream(): WhisperStreamState {
     setTranscript(text);
   }, []);
 
-  return { transcript, isTranscribing, error, connect, sendAudioChunk, commit, disconnect, resetTranscript, injectTranscript };
+  const transcribeBatch = useCallback(async (uri: string): Promise<string> => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) throw new Error('Not authenticated');
+
+    setIsTranscribing(true);
+    setError(null);
+    try {
+      const audioResponse = await fetch(uri);
+      const blob = await audioResponse.blob();
+
+      const form = new FormData();
+      form.append('audio', blob, 'recording.m4a');
+
+      const res = await fetch(`${SUPABASE_FUNCTIONS_URL}/whisper-batch`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+        body: form,
+      });
+
+      if (!res.ok) throw new Error('Transcription failed');
+      const data = await res.json();
+      const text: string = data.transcript ?? '';
+      setTranscript(text);
+      return text;
+    } catch (err: any) {
+      setError(err?.message ?? 'Transcription failed');
+      throw err;
+    } finally {
+      setIsTranscribing(false);
+    }
+  }, []);
+
+  return { transcript, isTranscribing, error, connect, sendAudioChunk, commit, disconnect, resetTranscript, injectTranscript, transcribeBatch };
 }

@@ -37,7 +37,6 @@ export function LiveTranscript({ transcript, isTranscribing }: Props) {
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
     borderRadius: 16,
     backgroundColor: '#f7f7f7',
     marginHorizontal: 16,

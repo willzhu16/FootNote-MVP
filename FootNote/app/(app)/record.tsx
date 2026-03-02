@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -63,22 +63,22 @@ export default function RecordScreen() {
     if (audio.isRecording) {
       // Stop recording
       const uri = await audio.stopRecording();
-      whisper.commit();
-      whisper.disconnect();
 
-      // Final structure pass + save
+      // Transcribe then structure + save
       setSaving(true);
       try {
-        await gpt.reorganize(whisper.transcript, mode);
+        const transcript = uri ? await whisper.transcribeBatch(uri) : '';
+
+        await gpt.reorganize(transcript, mode);
 
         const durationSecs = Math.floor(audio.durationMs / 1000);
         const firstBullet = gpt.structured.bullets[0];
         const title = firstBullet
           ? firstBullet.slice(0, 60)
-          : whisper.transcript.slice(0, 60) || null;
+          : transcript.slice(0, 60) || null;
 
         const note = await createNote({
-          raw_transcript: whisper.transcript,
+          raw_transcript: transcript,
           structured_content: gpt.structured,
           duration_seconds: durationSecs,
           mode,
@@ -95,9 +95,7 @@ export default function RecordScreen() {
               contentType: 'audio/m4a',
               upsert: true,
             });
-            const { data: urlData } = supabase.storage
-              .from('audio-notes')
-              .getPublicUrl(path);
+            supabase.storage.from('audio-notes').getPublicUrl(path);
             // Note: bucket is private so we'll use signed URLs in detail view
           } catch {
             // Audio upload failure is non-critical
@@ -120,7 +118,6 @@ export default function RecordScreen() {
       gpt.resetStructured();
       try {
         await audio.startRecording();
-        await whisper.connect();
       } catch (err: any) {
         Alert.alert('Error', err?.message ?? 'Failed to start recording');
       }
@@ -145,7 +142,7 @@ export default function RecordScreen() {
       {/* Header */}
       <View style={styles.headerRow}>
         <Text style={[styles.heading, dark && styles.textDark]}>
-          {audio.isRecording ? 'Recording…' : saving ? 'Saving…' : 'Ready'}
+          {audio.isRecording ? 'Recording…' : whisper.isTranscribing ? 'Transcribing…' : saving ? 'Saving…' : 'Ready'}
         </Text>
         {audio.isRecording && (
           <Text style={styles.duration}>{formatDuration(audio.durationMs)}</Text>
@@ -198,12 +195,12 @@ export default function RecordScreen() {
         <RecordButton
           isRecording={audio.isRecording}
           onPress={handleToggleRecording}
-          disabled={saving}
+          disabled={saving || whisper.isTranscribing}
         />
-        {!audio.isRecording && !saving && (
+        {!audio.isRecording && !saving && !whisper.isTranscribing && (
           <Text style={[styles.hint, dark && styles.subtextDark]}>Tap to record</Text>
         )}
-        {!audio.isRecording && !saving && !hasTranscript && (
+        {!audio.isRecording && !saving && !whisper.isTranscribing && !hasTranscript && (
           <TouchableOpacity
             onPress={handleDemo}
             disabled={gpt.isStructuring}
@@ -234,7 +231,7 @@ const styles = StyleSheet.create({
   textDark: { color: '#fff' },
   subtextDark: { color: '#666' },
   duration: { fontSize: 20, fontWeight: '600', color: '#e53e3e', fontVariant: ['tabular-nums'] },
-  transcriptWrapper: { minHeight: 120 },
+  transcriptWrapper: { height: 120 },
   reorganizeBtn: {
     marginHorizontal: 16,
     borderWidth: 1,
