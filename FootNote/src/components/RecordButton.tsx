@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { TouchableOpacity, StyleSheet, useColorScheme } from 'react-native';
+import { TouchableOpacity, StyleSheet } from 'react-native';
+import { useTheme } from '@/context/ThemeContext';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -17,7 +18,7 @@ interface Props {
 }
 
 export function RecordButton({ isRecording, onPress, disabled }: Props) {
-  const dark = useColorScheme() === 'dark';
+  const { isDark: dark } = useTheme();
   const scale = useSharedValue(1);
   const opacity = useSharedValue(1);
 
@@ -61,7 +62,7 @@ export function RecordButton({ isRecording, onPress, disabled }: Props) {
         <Ionicons
           name={isRecording ? 'stop' : 'mic'}
           size={32}
-          color="#fff"
+          color={isRecording || !dark ? '#fff' : '#111'}
         />
       </TouchableOpacity>
     </Animated.View>

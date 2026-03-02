@@ -1,10 +1,16 @@
-import { TouchableOpacity, View, Text, StyleSheet, useColorScheme } from 'react-native';
+import { useRef } from 'react';
+import { TouchableOpacity, View, Text, StyleSheet } from 'react-native';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
+import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@/context/ThemeContext';
 import { VoiceNote } from '@/types/note';
 import { MODE_LABELS } from '@/lib/constants';
+import { pendingAudio } from '@/lib/pendingAudio';
 
 interface Props {
   note: VoiceNote;
   onPress: () => void;
+  onDelete?: () => void;
 }
 
 function formatDate(iso: string) {
@@ -17,13 +23,15 @@ function formatDuration(secs: number) {
   return `${Math.floor(secs / 60)}m ${secs % 60}s`;
 }
 
-export function NoteCard({ note, onPress }: Props) {
-  const dark = useColorScheme() === 'dark';
+export function NoteCard({ note, onPress, onDelete }: Props) {
+  const { isDark: dark } = useTheme();
+  const swipeRef = useRef<Swipeable>(null);
   const bullets = note.structured_content?.bullets ?? [];
   const preview = bullets.slice(0, 2);
   const title = note.title ?? note.raw_transcript.slice(0, 60) + (note.raw_transcript.length > 60 ? '…' : '');
+  const hasPendingAudio = pendingAudio.has(note.id);
 
-  return (
+  const card = (
     <TouchableOpacity
       style={[styles.card, dark && styles.cardDark]}
       onPress={onPress}
@@ -33,10 +41,17 @@ export function NoteCard({ note, onPress }: Props) {
         <Text style={[styles.title, dark && styles.textDark]} numberOfLines={1}>
           {title || 'Untitled note'}
         </Text>
-        <View style={[styles.badge, dark && styles.badgeDark]}>
-          <Text style={[styles.badgeText, dark && styles.badgeTextDark]}>
-            {MODE_LABELS[note.mode] ?? 'Default'}
-          </Text>
+        <View style={styles.badges}>
+          {hasPendingAudio && (
+            <View style={styles.pendingBadge}>
+              <Text style={styles.pendingText}>⚡</Text>
+            </View>
+          )}
+          <View style={[styles.badge, dark && styles.badgeDark]}>
+            <Text style={[styles.badgeText, dark && styles.badgeTextDark]}>
+              {MODE_LABELS[note.mode] ?? 'Default'}
+            </Text>
+          </View>
         </View>
       </View>
       {preview.length > 0 && (
@@ -57,6 +72,27 @@ export function NoteCard({ note, onPress }: Props) {
         )}
       </View>
     </TouchableOpacity>
+  );
+
+  if (!onDelete) return card;
+
+  return (
+    <Swipeable
+      ref={swipeRef}
+      renderRightActions={() => (
+        <TouchableOpacity
+          style={[styles.deleteAction, dark && styles.deleteActionDark]}
+          onPress={() => { swipeRef.current?.close(); onDelete(); }}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="trash-outline" size={20} color="#fff" />
+          <Text style={styles.deleteText}>Delete</Text>
+        </TouchableOpacity>
+      )}
+      overshootRight={false}
+    >
+      {card}
+    </Swipeable>
   );
 }
 
@@ -82,6 +118,14 @@ const styles = StyleSheet.create({
   title: { flex: 1, fontSize: 15, fontWeight: '600', color: '#111', marginRight: 8 },
   textDark: { color: '#fff' },
   subtextDark: { color: '#666' },
+  badges: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  pendingBadge: {
+    backgroundColor: '#fff7e6',
+    borderRadius: 6,
+    paddingHorizontal: 5,
+    paddingVertical: 2,
+  },
+  pendingText: { fontSize: 11 },
   badge: {
     backgroundColor: '#f0f0f0',
     borderRadius: 8,
@@ -95,4 +139,16 @@ const styles = StyleSheet.create({
   bullet: { fontSize: 13, color: '#555', marginBottom: 2 },
   footer: { flexDirection: 'row', justifyContent: 'space-between' },
   meta: { fontSize: 12, color: '#aaa' },
+  deleteAction: {
+    backgroundColor: '#e53e3e',
+    borderRadius: 16,
+    marginBottom: 12,
+    marginLeft: 8,
+    paddingHorizontal: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 4,
+  },
+  deleteActionDark: { backgroundColor: '#c53030' },
+  deleteText: { fontSize: 11, fontWeight: '600', color: '#fff' },
 });

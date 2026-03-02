@@ -37,6 +37,7 @@ export function useNotes() {
       duration_seconds: number;
       mode: NoteMode;
       title?: string;
+      audio_url?: string;
     }): Promise<VoiceNote | null> => {
       if (!user) return null;
       // In dev mode, create a local-only note without hitting Supabase
@@ -66,6 +67,7 @@ export function useNotes() {
           duration_seconds: partial.duration_seconds,
           mode: partial.mode,
           title: partial.title ?? null,
+          audio_url: partial.audio_url ?? null,
         })
         .select()
         .single();

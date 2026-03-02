@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet, useColorScheme, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, StyleSheet, ActivityIndicator } from 'react-native';
+import { useTheme } from '@/context/ThemeContext';
 import { StructuredContent, NoteMode } from '@/types/note';
 
 const SECTION_CONFIG: Record<
@@ -36,10 +37,11 @@ interface Props {
   mode: NoteMode;
   isStructuring?: boolean;
   editable?: boolean;
+  onItemChange?: (key: keyof StructuredContent, index: number, value: string) => void;
 }
 
-export function StructuredNote({ structured, mode, isStructuring }: Props) {
-  const dark = useColorScheme() === 'dark';
+export function StructuredNote({ structured, mode, isStructuring, editable, onItemChange }: Props) {
+  const { isDark: dark } = useTheme();
   const sections = SECTION_CONFIG[mode] ?? SECTION_CONFIG.default;
   const hasContent = sections.some((s) => (structured[s.key] ?? []).length > 0);
 
@@ -62,9 +64,20 @@ export function StructuredNote({ structured, mode, isStructuring }: Props) {
               {icon}  {label}
             </Text>
             {items.map((item, i) => (
-              <Text key={i} style={[styles.item, dark && styles.itemDark]}>
-                {item}
-              </Text>
+              editable && onItemChange ? (
+                <TextInput
+                  key={i}
+                  style={[styles.item, styles.itemInput, dark && styles.itemDark]}
+                  value={item}
+                  onChangeText={(v) => onItemChange(key, i, v)}
+                  multiline
+                  blurOnSubmit={false}
+                />
+              ) : (
+                <Text key={i} style={[styles.item, dark && styles.itemDark]}>
+                  {item}
+                </Text>
+              )
             ))}
           </View>
         );
@@ -99,4 +112,5 @@ const styles = StyleSheet.create({
   },
   item: { fontSize: 14, color: '#222', marginBottom: 3, lineHeight: 20 },
   itemDark: { color: '#ccc' },
+  itemInput: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#ccc', paddingVertical: 2 },
 });

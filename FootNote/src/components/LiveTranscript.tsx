@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
-import { ScrollView, Text, StyleSheet, useColorScheme, View } from 'react-native';
+import { ScrollView, Text, StyleSheet, View } from 'react-native';
+import { useTheme } from '@/context/ThemeContext';
 
 interface Props {
   transcript: string;
@@ -8,7 +9,7 @@ interface Props {
 
 export function LiveTranscript({ transcript, isTranscribing }: Props) {
   const scrollRef = useRef<ScrollView>(null);
-  const dark = useColorScheme() === 'dark';
+  const { isDark: dark } = useTheme();
 
   useEffect(() => {
     scrollRef.current?.scrollToEnd({ animated: true });

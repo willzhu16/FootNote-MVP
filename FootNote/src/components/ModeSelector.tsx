@@ -1,4 +1,5 @@
-import { ScrollView, TouchableOpacity, Text, StyleSheet, useColorScheme } from 'react-native';
+import { ScrollView, TouchableOpacity, Text, StyleSheet } from 'react-native';
+import { useTheme } from '@/context/ThemeContext';
 import { NoteMode } from '@/types/note';
 import { MODE_LABELS } from '@/lib/constants';
 
@@ -11,7 +12,7 @@ interface Props {
 }
 
 export function ModeSelector({ selected, onChange, disabled }: Props) {
-  const dark = useColorScheme() === 'dark';
+  const { isDark: dark } = useTheme();
 
   return (
     <ScrollView
@@ -36,7 +37,7 @@ export function ModeSelector({ selected, onChange, disabled }: Props) {
               style={[
                 styles.label,
                 dark ? styles.labelDark : styles.labelLight,
-                active && styles.labelActive,
+                active && (dark ? styles.labelActiveDark : styles.labelActive),
               ]}
             >
               {MODE_LABELS[mode]}
@@ -64,4 +65,5 @@ const styles = StyleSheet.create({
   labelLight: { color: '#555' },
   labelDark: { color: '#888' },
   labelActive: { color: '#fff' },
+  labelActiveDark: { color: '#111' },
 });

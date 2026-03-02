@@ -8,10 +8,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  useColorScheme,
 } from 'react-native';
 import { Link } from 'expo-router';
 import { useAuth } from '@/context/AuthContext';
+import { useTheme } from '@/context/ThemeContext';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -19,8 +19,7 @@ export default function LoginScreen() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { signIn, devBypass } = useAuth();
-  const scheme = useColorScheme();
-  const dark = scheme === 'dark';
+  const { isDark: dark } = useTheme();
 
   const handleLogin = async () => {
     if (!email || !password) {

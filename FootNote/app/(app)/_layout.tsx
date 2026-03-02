@@ -1,13 +1,13 @@
 import { Tabs } from 'expo-router';
-import { useColorScheme } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useTheme } from '@/context/ThemeContext';
 
 export default function AppLayout() {
-  const scheme = useColorScheme();
-  const dark = scheme === 'dark';
+  const { isDark: dark } = useTheme();
 
   return (
     <Tabs
+      initialRouteName="record"
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
@@ -19,15 +19,6 @@ export default function AppLayout() {
       }}
     >
       <Tabs.Screen
-        name="index"
-        options={{
-          title: 'Notes',
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="document-text-outline" size={size} color={color} />
-          ),
-        }}
-      />
-      <Tabs.Screen
         name="record"
         options={{
           title: 'Record',
@@ -37,7 +28,20 @@ export default function AppLayout() {
         }}
       />
       <Tabs.Screen
+        name="index"
+        options={{
+          title: 'Notes',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="document-text-outline" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="note/[id]"
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="profile"
         options={{ href: null }}
       />
     </Tabs>
