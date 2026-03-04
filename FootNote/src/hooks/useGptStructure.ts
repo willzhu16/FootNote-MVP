@@ -24,7 +24,7 @@ function normalizeItem(text: string): string {
     text
       .replace(/^\[(x| )\]\s*/i, '')
       .replace(/^\d+[.)]\s*/, '')
-      .replace(/^[-*•]\s*/, '')
+      .replace(/^[-*ï¿½]\s*/, '')
       .trim()
   );
 }
@@ -123,7 +123,7 @@ function parseMarkdownToStructured(markdown: string): StructuredContent {
 
     if (!currentSection) continue;
 
-    const bulletMatch = trimmed.match(/^([-*•]|\d+[.)])\s+(.+)$/);
+    const bulletMatch = trimmed.match(/^([-*ï¿½]|\d+[.)])\s+(.+)$/);
     if (bulletMatch) {
       const item = normalizeItem(bulletMatch[2]);
       if (item) result[currentSection].push(item);
@@ -141,6 +141,7 @@ function parseMarkdownToStructured(markdown: string): StructuredContent {
 export interface GptStructureState {
   structured: StructuredContent;
   isStructuring: boolean;
+  structureError: string | null;
   reorganize: (transcript: string, mode: NoteMode) => Promise<void>;
   scheduleStructure: (transcript: string, mode: NoteMode) => void;
   resetStructured: () => void;
@@ -149,31 +150,47 @@ export interface GptStructureState {
 export function useGptStructure(): GptStructureState {
   const [structured, setStructured] = useState<StructuredContent>(EMPTY_STRUCTURED_CONTENT);
   const [isStructuring, setIsStructuring] = useState(false);
+  const [structureError, setStructureError] = useState<string | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastWordCountRef = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
 
+  const MAX_GPT_WORDS = 3000;
+
   const runStructure = useCallback(async (transcript: string, mode: NoteMode) => {
     if (!transcript.trim()) return;
+
+    // Truncate very long transcripts to keep API costs reasonable.
+    // We keep the tail (most recent content) since that's what the user is
+    // still thinking about; a short prefix note signals the trim.
+    const words = transcript.split(/\s+/).filter(Boolean);
+    const trimmedTranscript = words.length > MAX_GPT_WORDS
+      ? '[Earlier content omitted] ' + words.slice(-MAX_GPT_WORDS).join(' ')
+      : transcript;
 
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    const { data: { session } } = await supabase.auth.getSession();
+    let { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      const { data } = await supabase.auth.refreshSession();
+      session = data.session;
+    }
 
-    // Dev mode: use local mock parser instead of Edge Function
+    // Dev mode / no session: use local mock parser instead of Edge Function
     if (!session) {
       setIsStructuring(true);
+      setStructureError(null);
       await new Promise((r) => setTimeout(r, 350));
-      setStructured(mockStructure(transcript));
+      setStructured(mockStructure(trimmedTranscript));
       setIsStructuring(false);
       lastWordCountRef.current = transcript.split(/\s+/).filter(Boolean).length;
       return;
     }
 
     setIsStructuring(true);
-    let accumulatedText = '';
+    setStructureError(null);
 
     try {
       const response = await fetch(`${SUPABASE_FUNCTIONS_URL}/gpt-structure`, {
@@ -182,37 +199,21 @@ export function useGptStructure(): GptStructureState {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${session.access_token}`,
         },
-        body: JSON.stringify({ transcript, mode }),
+        body: JSON.stringify({ transcript: trimmedTranscript, mode }),
         signal: controller.signal,
       });
 
-      if (!response.ok || !response.body) {
-        throw new Error('Structure request failed');
+      if (!response.ok) {
+        const errText = await response.text().catch(() => `HTTP ${response.status}`);
+        throw new Error(errText || `HTTP ${response.status}`);
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-
-        // SSE format: "data: <token>\n\n"
-        const lines = chunk.split('\n');
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const token = line.slice(6);
-            if (token === '[DONE]') break;
-            accumulatedText += token;
-            const parsed = parseMarkdownToStructured(accumulatedText);
-            setStructured(parsed);
-          }
-        }
-      }
+      const data = await response.json();
+      const markdown: string = data.markdown ?? '';
+      setStructured(parseMarkdownToStructured(markdown));
     } catch (err: any) {
       if (err?.name === 'AbortError') return;
-      // Silently fail for structuring errors
+      setStructureError('Structuring failed â€” check your Supabase function and OpenAI key.');
     } finally {
       setIsStructuring(false);
       lastWordCountRef.current = transcript.split(/\s+/).filter(Boolean).length;
@@ -243,9 +244,10 @@ export function useGptStructure(): GptStructureState {
 
   const resetStructured = useCallback(() => {
     setStructured(EMPTY_STRUCTURED_CONTENT);
+    setStructureError(null);
     lastWordCountRef.current = 0;
     if (debounceRef.current) clearTimeout(debounceRef.current);
   }, []);
 
-  return { structured, isStructuring, reorganize, scheduleStructure, resetStructured };
+  return { structured, isStructuring, structureError, reorganize, scheduleStructure, resetStructured };
 }

@@ -4,8 +4,8 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web"
   },
   "dependencies": {
@@ -14,7 +14,9 @@
     "@supabase/supabase-js": "^2.98.0",
     "expo": "~55.0.4",
     "expo-audio": "~55.0.8",
+    "expo-clipboard": "~55.0.8",
     "expo-dev-client": "^55.0.10",
+    "expo-haptics": "~55.0.8",
     "expo-linking": "~55.0.7",
     "expo-router": "~55.0.3",
     "expo-secure-store": "~55.0.8",

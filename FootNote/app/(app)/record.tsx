@@ -26,8 +26,8 @@ import { StructuredNote } from '@/components/StructuredNote';
 import { useGptStructure } from '@/hooks/useGptStructure';
 import { useChunkedRecording } from '@/hooks/useChunkedRecording';
 import { useNotes } from '@/hooks/useNotes';
-import { NoteMode, EMPTY_STRUCTURED_CONTENT } from '@/types/note';
 import { pendingAudio } from '@/lib/pendingAudio';
+import { NoteMode } from '@/types/note';
 
 function formatDuration(ms: number) {
   const secs = Math.floor(ms / 1000);
@@ -98,7 +98,7 @@ export default function RecordScreen() {
 
   const chunked = useChunkedRecording();
   const gpt = useGptStructure();
-  const { createNote } = useNotes();
+  const { createNote, error: notesError } = useNotes();
 
   useEffect(() => {
     if (chunked.accumulatedTranscript) {
@@ -111,47 +111,45 @@ export default function RecordScreen() {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setSaving(true);
       try {
-        const transcript = await chunked.stopRecording();
-        const unprocessed = chunked.getUnprocessedUris();
+        // stopRecording transcribes all chunks sequentially, updating
+        // accumulatedTranscript after each — the useEffect above triggers
+        // gpt.scheduleStructure() with the full context as it grows.
+        const { transcript, failedUris } = await chunked.stopRecording();
 
-        if (!transcript && unprocessed.length > 0) {
-          const note = await createNote({
-            raw_transcript: '',
-            structured_content: EMPTY_STRUCTURED_CONTENT,
-            duration_seconds: Math.floor(chunked.totalDurationMs / 1000),
-            mode,
-          });
-          if (note) {
-            pendingAudio.set(note.id, unprocessed);
-            chunked.reset();
-            gpt.resetStructured();
-            router.push(`/(app)/note/${note.id}`);
-          }
-        } else {
+        // Final reorganize with the complete transcript for a clean structure.
+        // Skip if there's no transcript (fully offline session — note detail
+        // screen will offer "Finish Transcription" once connectivity returns).
+        if (transcript) {
           await gpt.reorganize(transcript, mode);
-
-          const durationSecs = Math.floor(chunked.totalDurationMs / 1000);
-          const firstBullet = gpt.structured.bullets[0];
-          const title = firstBullet
-            ? firstBullet.slice(0, 60)
-            : transcript.slice(0, 60) || null;
-
-          const note = await createNote({
-            raw_transcript: transcript,
-            structured_content: gpt.structured,
-            duration_seconds: durationSecs,
-            mode,
-            title: title ?? undefined,
-          });
-
-          if (note) {
-            chunked.reset();
-            gpt.resetStructured();
-            router.push(`/(app)/note/${note.id}`);
-          }
         }
-      } catch {
-        Alert.alert('Error', 'Failed to save note. Please try again.');
+
+        const durationSecs = Math.floor(chunked.totalDurationMs / 1000);
+        const firstBullet = gpt.structured.bullets[0];
+        const title = firstBullet
+          ? firstBullet.slice(0, 60)
+          : transcript.slice(0, 60) || null;
+
+        const note = await createNote({
+          raw_transcript: transcript,
+          structured_content: gpt.structured,
+          duration_seconds: durationSecs,
+          mode,
+          title: title ?? undefined,
+        });
+
+        if (!note) throw new Error(notesError ?? 'Failed to save note — check your Supabase table and RLS policies.');
+
+        // Store any URIs that failed to transcribe so the note detail screen
+        // can offer a retry button once the user is back online.
+        if (failedUris.length > 0) {
+          pendingAudio.set(note.id, failedUris);
+        }
+
+        chunked.reset();
+        gpt.resetStructured();
+        router.push(`/(app)/note/${note.id}`);
+      } catch (err: any) {
+        Alert.alert('Error', err?.message ?? 'Failed to save note. Please try again.');
       } finally {
         setSaving(false);
       }
@@ -220,9 +218,9 @@ export default function RecordScreen() {
                 {chunked.isRecording ? 'Recording…' : saving ? 'Saving…' : 'Ready'}
               </Text>
             </View>
-            {chunked.isRecording && chunked.pendingChunks > 0 && (
+            {saving && chunked.pendingChunks > 0 && (
               <Text style={[styles.pendingHint, dark && styles.subtextDark]}>
-                {chunked.pendingChunks} chunk{chunked.pendingChunks > 1 ? 's' : ''} buffered
+                Transcribing chunk {chunked.pendingChunks}…
               </Text>
             )}
           </View>
@@ -272,6 +270,17 @@ export default function RecordScreen() {
               </Text>
             )}
 
+            {chunked.isRecording && chunked.isTranscribingChunk && (
+              <Text style={[styles.chunkStatus, dark && styles.chunkStatusDark]}>
+                ◌  Transcribing segment…
+              </Text>
+            )}
+            {chunked.isRecording && !chunked.isTranscribingChunk && chunked.pendingChunks > 0 && (
+              <Text style={[styles.chunkStatusQueued, dark && styles.chunkStatusQueuedDark]}>
+                ⚠  {chunked.pendingChunks} segment{chunked.pendingChunks > 1 ? 's' : ''} queued — will retry
+              </Text>
+            )}
+
             {/* Large structured note — main content area */}
             {(hasTranscript || gpt.isStructuring) && (
               <View style={styles.structuredWrapper}>
@@ -296,14 +305,15 @@ export default function RecordScreen() {
               </TouchableOpacity>
             )}
 
-            {chunked.error && (
-              <View style={styles.errorBanner}>
-                <Text style={styles.errorText}>{chunked.error}</Text>
-              </View>
-            )}
           </ScrollView>
         </Animated.View>
       </View>
+
+      {(chunked.error || gpt.structureError) && (
+        <View style={styles.errorBanner}>
+          <Text style={styles.errorText}>{chunked.error ?? gpt.structureError}</Text>
+        </View>
+      )}
 
       {/* Fixed footer — record button */}
       <View style={[styles.recordFooter, dark && styles.recordFooterDark, { paddingBottom: insets.bottom + 12 }]}>
@@ -422,4 +432,8 @@ const styles = StyleSheet.create({
   hint: { fontSize: 13, color: '#aaa' },
   demoBtn: {},
   demoText: { fontSize: 12, color: '#bbb', textDecorationLine: 'underline' },
+  chunkStatus: { fontSize: 11, color: '#aaa', textAlign: 'center', marginTop: 4 },
+  chunkStatusDark: { color: '#555' },
+  chunkStatusQueued: { fontSize: 11, color: '#d97706', textAlign: 'center', marginTop: 4 },
+  chunkStatusQueuedDark: { color: '#92400e' },
 });

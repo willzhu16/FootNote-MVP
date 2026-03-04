@@ -16,7 +16,8 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.williamlzhu.footnote",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "UIBackgroundModes": ["audio"]
       }
     },
     "android": {

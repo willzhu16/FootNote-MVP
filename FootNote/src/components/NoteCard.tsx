@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { TouchableOpacity, View, Text, StyleSheet } from 'react-native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useTheme } from '@/context/ThemeContext';
 import { VoiceNote } from '@/types/note';
 import { MODE_LABELS } from '@/lib/constants';
@@ -82,7 +83,7 @@ export function NoteCard({ note, onPress, onDelete }: Props) {
       renderRightActions={() => (
         <TouchableOpacity
           style={[styles.deleteAction, dark && styles.deleteActionDark]}
-          onPress={() => { swipeRef.current?.close(); onDelete(); }}
+          onPress={() => { swipeRef.current?.close(); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium); onDelete(); }}
           activeOpacity={0.8}
         >
           <Ionicons name="trash-outline" size={20} color="#fff" />

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import * as Clipboard from 'expo-clipboard';
 import {
   View,
   Text,
@@ -40,6 +41,7 @@ export default function NoteDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [transcribing, setTranscribing] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [copied, setCopied] = useState(false);
   const [playbackUri, setPlaybackUri] = useState<string | null>(null);
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -93,6 +95,21 @@ export default function NoteDetailScreen() {
       title: displayTitle,
       message: `${displayTitle}\n\n${body}`,
     });
+  }, [note]);
+
+  const handleCopy = useCallback(async () => {
+    if (!note) return;
+    const displayTitle = note.title || note.raw_transcript.slice(0, 60) || 'Untitled note';
+    const sections = (Object.entries(note.structured_content) as [string, string[]][])
+      .filter(([, items]) => items.length > 0)
+      .map(([key, items]) =>
+        `${key.replace(/_/g, ' ').toUpperCase()}\n${items.map((i) => `• ${i}`).join('\n')}`
+      )
+      .join('\n\n');
+    const body = sections || note.raw_transcript || '(no content)';
+    await Clipboard.setStringAsync(`${displayTitle}\n\n${body}`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   }, [note]);
 
   const handlePlayPause = useCallback(() => {
@@ -204,6 +221,13 @@ export default function NoteDetailScreen() {
           <Text style={[styles.backText, dark && styles.textDark]}>Notes</Text>
         </TouchableOpacity>
         <View style={styles.navActions}>
+          <TouchableOpacity onPress={handleCopy} style={styles.actionBtn}>
+            <Ionicons
+              name={copied ? 'checkmark-outline' : 'copy-outline'}
+              size={18}
+              color={copied ? '#22c55e' : (dark ? '#aaa' : '#555')}
+            />
+          </TouchableOpacity>
           <TouchableOpacity onPress={handleShare} style={styles.actionBtn}>
             <Ionicons name="share-outline" size={18} color={dark ? '#aaa' : '#555'} />
           </TouchableOpacity>
@@ -282,22 +306,30 @@ export default function NoteDetailScreen() {
         </TouchableOpacity>
       )}
 
-      {/* Transcribe button for notes recorded while offline */}
+      {/* Offline banner + transcribe button for notes with pending audio */}
       {note.raw_transcript === '' && pendingAudio.has(note.id) && (
-        <TouchableOpacity
-          style={[styles.actionRowBtn, dark && styles.actionRowBtnDark]}
-          onPress={handleTranscribe}
-          disabled={transcribing}
-          activeOpacity={0.7}
-        >
-          {transcribing ? (
-            <ActivityIndicator size="small" color={dark ? '#fff' : '#111'} />
-          ) : (
-            <Text style={[styles.actionRowBtnText, dark && styles.textDark]}>
-              ✦ Transcribe Recording
+        <>
+          <View style={[styles.offlineBanner, dark && styles.offlineBannerDark]}>
+            <Ionicons name="cloud-offline-outline" size={15} color={dark ? '#888' : '#aaa'} />
+            <Text style={[styles.offlineBannerText, dark && styles.offlineBannerTextDark]}>
+              Some segments weren't uploaded. Chunks will be retried in order — tap below when you're back online.
             </Text>
-          )}
-        </TouchableOpacity>
+          </View>
+          <TouchableOpacity
+            style={[styles.actionRowBtn, dark && styles.actionRowBtnDark]}
+            onPress={handleTranscribe}
+            disabled={transcribing}
+            activeOpacity={0.7}
+          >
+            {transcribing ? (
+              <ActivityIndicator size="small" color={dark ? '#fff' : '#111'} />
+            ) : (
+              <Text style={[styles.actionRowBtnText, dark && styles.textDark]}>
+                ✦ Finish Transcription
+              </Text>
+            )}
+          </TouchableOpacity>
+        </>
       )}
 
       {/* Raw transcript */}
@@ -363,4 +395,15 @@ const styles = StyleSheet.create({
   actionRowBtnDark: { borderColor: '#333' },
   actionRowBtnText: { fontSize: 14, fontWeight: '600', color: '#111' },
   playRow: { flexDirection: 'row', gap: 8 },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#f5f0e8',
+    borderRadius: 12,
+    padding: 12,
+  },
+  offlineBannerDark: { backgroundColor: '#1e1a12' },
+  offlineBannerText: { flex: 1, fontSize: 13, color: '#888', lineHeight: 18 },
+  offlineBannerTextDark: { color: '#666' },
 });

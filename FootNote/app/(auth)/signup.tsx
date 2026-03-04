@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ export default function SignupScreen() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const { signUp } = useAuth();
+  const passwordRef = useRef<TextInput>(null);
   const { isDark: dark } = useTheme();
 
   const handleSignup = async () => {
@@ -76,14 +77,20 @@ export default function SignupScreen() {
           autoCapitalize="none"
           keyboardType="email-address"
           autoComplete="email"
+          returnKeyType="next"
+          onSubmitEditing={() => passwordRef.current?.focus()}
+          blurOnSubmit={false}
         />
         <TextInput
+          ref={passwordRef}
           style={[styles.input, dark && styles.inputDark]}
           placeholder="Password (min 6 chars)"
           placeholderTextColor={dark ? '#666' : '#999'}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
+          returnKeyType="go"
+          onSubmitEditing={handleSignup}
         />
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}

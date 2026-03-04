@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ export default function LoginScreen() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { signIn, devBypass } = useAuth();
+  const passwordRef = useRef<TextInput>(null);
   const { isDark: dark } = useTheme();
 
   const handleLogin = async () => {
@@ -51,14 +52,20 @@ export default function LoginScreen() {
           autoCapitalize="none"
           keyboardType="email-address"
           autoComplete="email"
+          returnKeyType="next"
+          onSubmitEditing={() => passwordRef.current?.focus()}
+          blurOnSubmit={false}
         />
         <TextInput
+          ref={passwordRef}
           style={[styles.input, dark && styles.inputDark]}
           placeholder="Password"
           placeholderTextColor={dark ? '#666' : '#999'}
           value={password}
           onChangeText={setPassword}
           secureTextEntry
+          returnKeyType="go"
+          onSubmitEditing={handleLogin}
         />
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}

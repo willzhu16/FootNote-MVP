@@ -71,7 +71,7 @@ export function StructuredNote({ structured, mode, isStructuring, editable, onIt
                   value={item}
                   onChangeText={(v) => onItemChange(key, i, v)}
                   multiline
-                  blurOnSubmit={false}
+                  scrollEnabled={false}
                 />
               ) : (
                 <Text key={i} style={[styles.item, dark && styles.itemDark]}>

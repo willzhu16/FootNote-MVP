@@ -1,22 +1,65 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
   SectionList,
+  ScrollView,
   StyleSheet,
   TouchableOpacity,
   RefreshControl,
   TextInput,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withTiming,
+  Easing,
+} from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNotes } from '@/hooks/useNotes';
 import { NoteCard } from '@/components/NoteCard';
+import { OnboardingModal } from '@/components/OnboardingModal';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '@/context/ThemeContext';
-import { VoiceNote } from '@/types/note';
+import { VoiceNote, NoteMode } from '@/types/note';
+import { MODE_LABELS } from '@/lib/constants';
 
 type NoteSection = { title: string; data: VoiceNote[] };
+
+function SkeletonCard({ dark }: { dark: boolean }) {
+  const opacity = useSharedValue(1);
+  useEffect(() => {
+    opacity.value = withRepeat(
+      withTiming(0.4, { duration: 800, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true,
+    );
+  }, []);
+  const style = useAnimatedStyle(() => ({ opacity: opacity.value }));
+  return (
+    <Animated.View style={[skeletonStyles.card, dark && skeletonStyles.cardDark, style]}>
+      <View style={[skeletonStyles.line, skeletonStyles.lineTitle, dark && skeletonStyles.lineDark]} />
+      <View style={[skeletonStyles.line, skeletonStyles.lineMid, dark && skeletonStyles.lineDark]} />
+      <View style={[skeletonStyles.line, skeletonStyles.lineShort, dark && skeletonStyles.lineDark]} />
+    </Animated.View>
+  );
+}
+
+const skeletonStyles = StyleSheet.create({
+  card: {
+    backgroundColor: '#fff', borderRadius: 16, padding: 16,
+    marginBottom: 12, gap: 10,
+    shadowColor: '#000', shadowOpacity: 0.04, shadowRadius: 8, shadowOffset: { width: 0, height: 2 },
+  },
+  cardDark: { backgroundColor: '#1a1a1a', shadowOpacity: 0 },
+  line: { height: 12, borderRadius: 6, backgroundColor: '#e8e8e8' },
+  lineDark: { backgroundColor: '#2a2a2a' },
+  lineTitle: { width: '60%' },
+  lineMid: { width: '85%' },
+  lineShort: { width: '40%' },
+});
 
 function groupByDate(notes: VoiceNote[]): NoteSection[] {
   const now = new Date();
@@ -52,21 +95,43 @@ export default function NotesListScreen() {
   const { isDark: dark } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortAsc, setSortAsc] = useState(false);
+  const [modeFilter, setModeFilter] = useState<NoteMode | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; timer: ReturnType<typeof setTimeout> } | null>(null);
+
+  const handleDelete = (id: string) => {
+    if (pendingDelete) {
+      clearTimeout(pendingDelete.timer);
+      deleteNote(pendingDelete.id);
+    }
+    const timer = setTimeout(() => {
+      deleteNote(id);
+      setPendingDelete(null);
+    }, 3500);
+    setPendingDelete({ id, timer });
+  };
+
+  const handleUndoDelete = () => {
+    if (!pendingDelete) return;
+    clearTimeout(pendingDelete.timer);
+    setPendingDelete(null);
+  };
 
   const q = searchQuery.trim().toLowerCase();
   const sorted = sortAsc ? [...notes].reverse() : notes;
-  const filteredNotes = q
-    ? sorted.filter(
-        (n) =>
-          (n.title ?? '').toLowerCase().includes(q) ||
-          n.raw_transcript.toLowerCase().includes(q)
-      )
-    : sorted;
+  const filteredNotes = sorted.filter((n) => {
+    if (pendingDelete?.id === n.id) return false;
+    const matchesSearch = !q ||
+      (n.title ?? '').toLowerCase().includes(q) ||
+      n.raw_transcript.toLowerCase().includes(q);
+    const matchesMode = !modeFilter || n.mode === modeFilter;
+    return matchesSearch && matchesMode;
+  });
 
   const sections = groupByDate(filteredNotes);
 
   return (
     <View style={[styles.container, dark && styles.containerDark, { paddingTop: insets.top }]}>
+      <OnboardingModal />
       <View style={styles.header}>
         <View>
           <Text style={[styles.title, dark && styles.textDark]}>FootNote</Text>
@@ -103,6 +168,39 @@ export default function NotesListScreen() {
         />
       </View>
 
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.modeChips}
+        style={styles.modeChipsRow}
+      >
+        {([null, 'default', 'brainstorm', 'script', 'planning'] as (NoteMode | null)[]).map((m) => {
+          const active = modeFilter === m;
+          const label = m === null ? 'All' : MODE_LABELS[m];
+          return (
+            <TouchableOpacity
+              key={m ?? 'all'}
+              style={[styles.modeChip, active && styles.modeChipActive, dark && !active && styles.modeChipDark]}
+              onPress={() => setModeFilter(active ? null : m)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.modeChipText, active && styles.modeChipTextActive, dark && !active && styles.modeChipTextDark]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {pendingDelete && (
+        <View style={[styles.toast, dark && styles.toastDark]}>
+          <Text style={[styles.toastText, dark && styles.toastTextDark]}>Note deleted</Text>
+          <TouchableOpacity onPress={handleUndoDelete} style={styles.undoBtn}>
+            <Text style={styles.undoBtnText}>Undo</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       <SectionList
         sections={sections}
         keyExtractor={(item) => item.id}
@@ -110,7 +208,7 @@ export default function NotesListScreen() {
           <NoteCard
             note={item}
             onPress={() => router.push(`/(app)/note/${item.id}`)}
-            onDelete={() => deleteNote(item.id)}
+            onDelete={() => handleDelete(item.id)}
           />
         )}
         renderSectionHeader={({ section }) => (
@@ -129,25 +227,27 @@ export default function NotesListScreen() {
           />
         }
         ListEmptyComponent={
-          !loading ? (
-            q ? (
-              <View style={styles.empty}>
-                <Text style={[styles.emptyText, dark && styles.subtextDark]}>
-                  No results for "{searchQuery}"
-                </Text>
-                <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearBtn}>
-                  <Text style={[styles.clearBtnText, dark && styles.textDark]}>Clear search</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={styles.empty}>
-                <Text style={styles.emptyIcon}>🎙</Text>
-                <Text style={[styles.emptyText, dark && styles.subtextDark]}>
-                  No notes yet.{'\n'}Tap Record to capture your first thought.
-                </Text>
-              </View>
-            )
-          ) : null
+          loading ? (
+            <View style={styles.skeletonList}>
+              {[0, 1, 2].map((i) => <SkeletonCard key={i} dark={dark} />)}
+            </View>
+          ) : q ? (
+            <View style={styles.empty}>
+              <Text style={[styles.emptyText, dark && styles.subtextDark]}>
+                No results for "{searchQuery}"
+              </Text>
+              <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearBtn}>
+                <Text style={[styles.clearBtnText, dark && styles.textDark]}>Clear search</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.empty}>
+              <Text style={styles.emptyIcon}>🎙</Text>
+              <Text style={[styles.emptyText, dark && styles.subtextDark]}>
+                No notes yet.{'\n'}Tap Record to capture your first thought.
+              </Text>
+            </View>
+          )
         }
       />
     </View>
@@ -195,7 +295,32 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   sectionHeaderDark: { color: '#444' },
+  modeChipsRow: { maxHeight: 40, marginBottom: 8 },
+  modeChips: { paddingHorizontal: 16, gap: 8, alignItems: 'center' },
+  modeChip: {
+    paddingHorizontal: 14, paddingVertical: 6,
+    borderRadius: 20, borderWidth: 1, borderColor: '#e0e0e0',
+  },
+  modeChipDark: { borderColor: '#333' },
+  modeChipActive: { backgroundColor: '#111', borderColor: '#111' },
+  modeChipText: { fontSize: 12, fontWeight: '600', color: '#888' },
+  modeChipTextDark: { color: '#555' },
+  modeChipTextActive: { color: '#fff' },
   list: { paddingHorizontal: 16, paddingBottom: 100, paddingTop: 4 },
+  toast: {
+    position: 'absolute', bottom: 90, left: 20, right: 20,
+    backgroundColor: '#222', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    zIndex: 100,
+    shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 12, shadowOffset: { width: 0, height: 4 },
+    elevation: 8,
+  },
+  toastDark: { backgroundColor: '#333' },
+  toastText: { fontSize: 14, color: '#fff', fontWeight: '500' },
+  toastTextDark: { color: '#ddd' },
+  undoBtn: { paddingHorizontal: 12, paddingVertical: 4 },
+  undoBtnText: { fontSize: 14, fontWeight: '700', color: '#e53e3e' },
+  skeletonList: { paddingHorizontal: 16, paddingTop: 4 },
   empty: { alignItems: 'center', paddingTop: 80, gap: 12 },
   emptyIcon: { fontSize: 48 },
   emptyText: { fontSize: 15, color: '#aaa', textAlign: 'center', lineHeight: 22 },

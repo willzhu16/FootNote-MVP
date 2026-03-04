@@ -35,8 +35,20 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Explicitly materialise the bytes so Deno doesn't forward a partially-
+    // consumed stream to OpenAI (which causes the "cannot be decoded" error).
+    const bytes = await file.arrayBuffer();
+    if (bytes.byteLength === 0) {
+      return new Response(JSON.stringify({ error: 'Audio file is empty' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const blob = new Blob([bytes], { type: 'audio/m4a' });
+
     const openaiForm = new FormData();
-    openaiForm.append('file', file, 'recording.m4a');
+    openaiForm.append('file', blob, 'recording.m4a');
     openaiForm.append('model', 'whisper-1');
 
     const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
@@ -46,7 +58,8 @@ Deno.serve(async (req: Request) => {
     });
 
     if (!res.ok) {
-      return new Response(JSON.stringify({ error: await res.text() }), {
+      const errBody = await res.text();
+      return new Response(JSON.stringify({ error: errBody }), {
         status: res.status,
         headers: { 'Content-Type': 'application/json' },
       });
